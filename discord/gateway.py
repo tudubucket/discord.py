@@ -496,7 +496,6 @@ class DiscordWebSocket:
         _log.debug('Shard ID %s has sent the RESUME payload.', self.shard_id)
 
     async def received_message(self, msg: Any, /) -> None:
-        return
         if type(msg) is bytes:
             msg = self._decompressor.decompress(msg)
 
@@ -574,6 +573,8 @@ class DiscordWebSocket:
             # pass back the shard ID to the resumed handler
             data['__shard_id__'] = self.shard_id
             _log.info('Shard ID %s has successfully RESUMED session %s.', self.shard_id, self.session_id)
+
+        return
 
         try:
             func = self._discord_parsers[event]
