@@ -496,6 +496,7 @@ class DiscordWebSocket:
         _log.debug('Shard ID %s has sent the RESUME payload.', self.shard_id)
 
     async def received_message(self, msg: Any, /) -> None:
+        return
         if type(msg) is bytes:
             msg = self._decompressor.decompress(msg)
 
