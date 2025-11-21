@@ -651,17 +651,17 @@ if HAS_ORJSON:
 
     def _to_json(obj: Any) -> str:
         return orjson.dumps(obj).decode('utf-8')
-
-    async def _from_json(*args, **kwargs) -> Any: 
-        return orjson.loads(*args, **kwargs)
+    
+    async def _from_json(data: str) -> dict:
+        return await asyncio.to_thread(orjson.loads, data)
 
 else:
 
     def _to_json(obj: Any) -> str:
         return json.dumps(obj, separators=(',', ':'), ensure_ascii=True)
 
-    async def _from_json(*args, **kwargs) -> Any: 
-        return json.loads(*args, **kwargs)
+    async def _from_json(data: str) -> dict:
+        return await asyncio.to_thread(json.loads, data)
 
 
 def _parse_ratelimit_header(request: Any, *, use_clock: bool = False) -> float:
