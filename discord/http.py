@@ -111,7 +111,7 @@ async def json_or_text(response: aiohttp.ClientResponse) -> Union[Dict[str, Any]
     text = await response.text(encoding='utf-8')
     try:
         if response.headers['content-type'] == 'application/json':
-            return utils._from_json(text)
+            return await utils._from_json(text)
     except KeyError:
         # Thanks Cloudflare
         pass

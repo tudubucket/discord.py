@@ -504,7 +504,7 @@ class DiscordWebSocket:
                 return
 
         self.log_receive(msg)
-        msg = utils._from_json(msg)
+        msg = await utils._from_json(msg)
 
         _log.debug('For Shard ID %s: WebSocket Event: %s', self.shard_id, msg)
         event = msg.get('t')
@@ -1046,7 +1046,7 @@ class DiscordVoiceWebSocket:
         # This exception is handled up the chain
         msg = await asyncio.wait_for(self.ws.receive(), timeout=30.0)
         if msg.type is aiohttp.WSMsgType.TEXT:
-            await self.received_message(utils._from_json(msg.data))
+            await self.received_message(await utils._from_json(msg.data))
         elif msg.type is aiohttp.WSMsgType.ERROR:
             _log.debug('Received voice %s', msg)
             raise ConnectionClosed(self.ws, shard_id=None) from msg.data

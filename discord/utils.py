@@ -652,14 +652,16 @@ if HAS_ORJSON:
     def _to_json(obj: Any) -> str:
         return orjson.dumps(obj).decode('utf-8')
 
-    _from_json = orjson.loads  # type: ignore
+    async def _from_json(*args, **kwargs) -> Any: 
+        return orjson.loads(*args, **kwargs)
 
 else:
 
     def _to_json(obj: Any) -> str:
         return json.dumps(obj, separators=(',', ':'), ensure_ascii=True)
 
-    _from_json = json.loads
+    async def _from_json(*args, **kwargs) -> Any: 
+        return json.loads(*args, **kwargs)
 
 
 def _parse_ratelimit_header(request: Any, *, use_clock: bool = False) -> float:
