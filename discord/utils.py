@@ -73,8 +73,8 @@ import types
 import typing
 import warnings
 import logging
+
 import yarl
-import concurrent.futures
 
 try:
     import orjson  # type: ignore
@@ -655,7 +655,6 @@ def _base64_to_bytes(data: str) -> bytes:
 def _is_submodule(parent: str, child: str) -> bool:
     return parent == child or child.startswith(parent + '.')
 
-PROCESS_POOL = concurrent.futures.ProcessPoolExecutor()
 
 if HAS_ORJSON:
 
@@ -663,8 +662,7 @@ if HAS_ORJSON:
         return orjson.dumps(obj).decode('utf-8')
     
     async def _from_json(data: str) -> dict:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(PROCESS_POOL, orjson.loads, data)
+        return await asyncio.to_thread(orjson.loads, data)
 
 else:
 
@@ -672,8 +670,7 @@ else:
         return json.dumps(obj, separators=(',', ':'), ensure_ascii=True)
 
     async def _from_json(data: str) -> dict:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(PROCESS_POOL, json.loads, data)
+        return await asyncio.to_thread(json.loads, data)
 
 
 def _parse_ratelimit_header(request: Any, *, use_clock: bool = False) -> float:
