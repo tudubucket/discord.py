@@ -662,7 +662,7 @@ if HAS_ORJSON:
         return orjson.dumps(obj).decode('utf-8')
     
     async def _from_json(data: str) -> dict:
-        return await asyncio.to_thread(orjson.loads, data)
+        return orjson.loads(data)
 
 else:
 
@@ -670,7 +670,7 @@ else:
         return json.dumps(obj, separators=(',', ':'), ensure_ascii=True)
 
     async def _from_json(data: str) -> dict:
-        return await asyncio.to_thread(json.loads, data)
+        return orjson.loads(data)
 
 
 def _parse_ratelimit_header(request: Any, *, use_clock: bool = False) -> float:
