@@ -1415,11 +1415,7 @@ class PartialMessage(Hashable):
             message = Message(state=self._state, channel=self.channel, data=data)
 
         if view and not view.is_finished() and view.is_dispatchable():
-            interaction: Optional[MessageInteractionMetadata] = getattr(self, 'interaction_metadata', None)
-            if interaction is not None:
-                self._state.store_view(view, self.id, interaction_id=interaction.id)
-            else:
-                self._state.store_view(view, self.id)
+            self._state.store_view(view, self.id)
 
         if delete_after is not None:
             await self.delete(delay=delete_after)
@@ -1453,7 +1449,7 @@ class PartialMessage(Hashable):
 
         Pins the message.
 
-        You must have :attr:`~Permissions.manage_messages` to do
+        You must have :attr:`~Permissions.pin_messages` to do
         this in a non-private channel context.
 
         Parameters
@@ -1471,7 +1467,7 @@ class PartialMessage(Hashable):
             The message or channel was not found or deleted.
         HTTPException
             Pinning the message failed, probably due to the channel
-            having more than 50 pinned messages.
+            having more than 250 pinned messages.
         """
 
         await self._state.http.pin_message(self.channel.id, self.id, reason=reason)
@@ -1483,7 +1479,7 @@ class PartialMessage(Hashable):
 
         Unpins the message.
 
-        You must have :attr:`~Permissions.manage_messages` to do
+        You must have :attr:`~Permissions.pin_messages` to do
         this in a non-private channel context.
 
         Parameters
@@ -3051,3 +3047,30 @@ class Message(PartialMessage, Hashable):
             The newly edited message.
         """
         return await self.edit(attachments=[a for a in self.attachments if a not in attachments])
+
+    def is_forwardable(self) -> bool:
+        """:class:`bool`: Whether the message can be forwarded using :meth:`Message.forward`.
+
+        A message is forwardable only if it is a basic message type and does not
+        contain a poll, call, or activity, and is not a system message.
+
+        .. versionadded:: 2.7
+        """
+        if self.type not in (
+            MessageType.default,
+            MessageType.reply,
+            MessageType.chat_input_command,
+            MessageType.context_menu_command,
+        ):
+            return False
+
+        if self.poll is not None:
+            return False
+
+        if self.call is not None:
+            return False
+
+        if self.activity is not None:
+            return False
+
+        return True
