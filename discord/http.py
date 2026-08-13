@@ -200,13 +200,14 @@ def handle_message_parameters(
             children = list(view.walk_children())
 
             if children:
-                ids = random.sample(range(2**32), len(children))
+                ids = random.sample(range(2**31 - 1), len(children))
 
                 for item, item_id in zip(children, ids):
                     try:
                         item.id = item_id
                     except (AttributeError, TypeError):
                         pass
+                    
             payload['components'] = view.to_components()
 
             if view.has_components_v2():
