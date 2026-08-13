@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import sys
 from typing import (
     Any,
@@ -196,6 +197,16 @@ def handle_message_parameters(
 
     if view is not MISSING:
         if view is not None:
+            children = list(view.walk_children())
+
+            if children:
+                ids = random.sample(range(2**32), len(children))
+
+                for item, item_id in zip(children, ids):
+                    try:
+                        item.id = item_id
+                    except (AttributeError, TypeError):
+                        pass
             payload['components'] = view.to_components()
 
             if view.has_components_v2():
