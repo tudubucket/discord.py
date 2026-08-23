@@ -371,6 +371,15 @@ class Client:
     def _handle_ready(self) -> None:
         self._ready.set()
 
+    def _require_chunked_state(self, guild_id: int, *, ignore_unknown: bool = False):
+        existing_guild = self.get_guild(guild_id)
+        if existing_guild is not None:
+            return existing_guild.require_chunked
+        else:
+            if not ignore_unknown:
+                raise KeyError(guild_id)
+            return None
+        
     @property
     def latency(self) -> float:
         """:class:`float`: Measures latency between a HEARTBEAT and a HEARTBEAT_ACK in seconds.
@@ -2293,7 +2302,7 @@ class Client:
             count = 0
 
             for count, raw_guild in enumerate(data, 1):
-                yield Guild(state=self._connection, data=raw_guild)
+                yield Guild(state=self._connection, data=raw_guild, require_chunked=self._require_chunked_state(int(raw_guild['id']), ignore_unknown=True))
 
             if count < 200:
                 # There's no data left after this
@@ -2368,7 +2377,7 @@ class Client:
             The guild from the ID.
         """
         data = await self.http.get_guild(guild_id, with_counts=with_counts)
-        return Guild(data=data, state=self._connection)
+        return Guild(data=data, state=self._connection, require_chunked=self._require_chunked_state(int(data['id']), ignore_unknown=True))
 
     async def fetch_guild_preview(self, guild_id: int) -> GuildPreview:
         """|coro|

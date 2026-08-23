@@ -524,8 +524,8 @@ class ConnectionState(Generic[ClientT]):
     def _get_message(self, msg_id: Optional[int]) -> Optional[Message]:
         return utils.find(lambda m: m.id == msg_id, reversed(self._messages)) if self._messages else None
 
-    def _add_guild_from_data(self, data: GuildPayload) -> Guild:
-        guild = Guild(data=data, state=self)
+    def _add_guild_from_data(self, data: GuildPayload, *, require_chunked: Optional[bool] = None) -> Guild:
+        guild = Guild(data=data, state=self, require_chunked=require_chunked)
         self._add_guild(guild)
         return guild
 
@@ -671,7 +671,8 @@ class ConnectionState(Generic[ClientT]):
                 self.application_flags: ApplicationFlags = ApplicationFlags._from_value(application['flags'])
 
         for guild_data in data['guilds']:
-            self._add_guild_from_data(guild_data)  # type: ignore
+            # require_chunked is None since all guilds here is in unavailable state
+            self._add_guild_from_data(guild_data, require_chunked=None)  # type: ignore
 
         self.dispatch('connect')
         self._ready_task = asyncio.create_task(self._delay_ready())
@@ -1248,17 +1249,19 @@ class ConnectionState(Generic[ClientT]):
         self.dispatch('automod_action', execution)
 
     def _get_create_guild(self, data: gw.GuildCreateEvent) -> Guild:
-        if data.get('unavailable') is False:
+        unavailable_state = data.get('unavailable')
+        if unavailable_state is False:
             # GUILD_CREATE with unavailable in the response
             # usually means that the guild has become available
             # and is therefore in the cache
             guild = self._get_guild(int(data['id']))
             if guild is not None:
                 guild.unavailable = False
+                guild.require_chunked = True
                 guild._from_data(data)
                 return guild
 
-        return self._add_guild_from_data(data)
+        return self._add_guild_from_data(data, require_chunked=unavailable_state is False)
 
     def is_guild_evicted(self, guild: Guild) -> bool:
         return guild.id not in self._guilds
@@ -1970,7 +1973,7 @@ class AutoShardedConnectionState(ConnectionState[ClientT]):
                 self.application_flags: ApplicationFlags = ApplicationFlags._from_value(application['flags'])
 
         for guild_data in data['guilds']:
-            self._add_guild_from_data(guild_data)  # type: ignore # _add_guild_from_data requires a complete Guild payload
+            self._add_guild_from_data(guild_data, require_chunked=False)  # type: ignore # _add_guild_from_data requires a complete Guild payload
 
         if self._messages:
             self._update_message_references()

@@ -154,7 +154,7 @@ class Template:
         source_serialised['id'] = int(data['source_guild_id'])
         state = _PartialTemplateState(state=self._state)
         # Guild expects a ConnectionState, we're passing a _PartialTemplateState
-        self.source_guild = Guild(data=source_serialised, state=state)  # type: ignore
+        self.source_guild = Guild(data=source_serialised, state=state, require_chunked=None)  # type: ignore
 
         self.is_dirty: Optional[bool] = data.get('is_dirty', None)
 
