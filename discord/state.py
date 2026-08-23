@@ -1108,7 +1108,7 @@ class ConnectionState(Generic[ClientT]):
             return
 
         member = Member(guild=guild, data=data, state=self)
-        if self.member_cache_flags.joined:
+        if self.member_cache_flags.joined and guild.require_chunked:
             guild._add_member(member)
 
         if guild._member_count is not None:
