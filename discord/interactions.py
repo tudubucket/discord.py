@@ -1306,6 +1306,7 @@ class InteractionResponse(Generic[ClientT]):
             params=params,
         )
         if not modal.is_finished():
+            modal._user_id = self._parent.user.id  # type: ignore
             self._parent._state.store_view(modal)
         self._response_type = InteractionResponseType.modal
 

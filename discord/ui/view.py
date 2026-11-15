@@ -902,8 +902,8 @@ class ViewStore:
         self._views: Dict[Optional[int], Dict[Tuple[int, str], Item[BaseView]]] = {}
         # message_id: View
         self._synced_message_views: Dict[int, BaseView] = {}
-        # custom_id: Modal
-        self._modals: Dict[str, Modal] = {}
+        # (user_id, custom_id): Modal
+        self._modals: Dict[Tuple[Optional[int], str], Modal] = {}
         # component_type is the key
         self._dynamic_items: Dict[re.Pattern[str], Type[DynamicItem[Item[Any]]]] = {}
         self._state: ConnectionState = state
@@ -938,7 +938,7 @@ class ViewStore:
     def add_view(self, view: BaseView, message_id: Optional[int] = None) -> None:
         view._start_listening_from_store(self)
         if view.__discord_ui_modal__:
-            self._modals[view.custom_id] = view  # type: ignore
+            self._modals[(getattr(view, '_user_id', None), view.custom_id)] = view  # type: ignore
             return
 
         dispatch_info = self._views.get(message_id, {})
@@ -967,7 +967,9 @@ class ViewStore:
 
     def remove_view(self, view: BaseView) -> None:
         if view.__discord_ui_modal__:
-            self._modals.pop(view.custom_id, None)  # type: ignore
+            key = (getattr(view, '_user_id', None), view.custom_id)  # type: ignore
+            if self._modals.get(key) is view:
+                del self._modals[key]
             return
 
         dispatch_info = self._views.get(view._cache_key)
@@ -1089,7 +1091,9 @@ class ViewStore:
         components: List[ModalSubmitComponentInteractionDataPayload],
         resolved: ResolvedDataPayload,
     ) -> None:
-        modal = self._modals.get(custom_id)
+        modal = self._modals.get((interaction.user.id, custom_id))
+        if modal is None:
+            modal = self._modals.get((None, custom_id))
         if modal is None:
             _log.debug('Modal interaction referencing unknown custom_id %s. Discarding', custom_id)
             return
