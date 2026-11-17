@@ -843,6 +843,19 @@ Members
     :param payload: The raw event payload data.
     :type payload: :class:`RawMemberRemoveEvent`
 
+.. function:: on_raw_member_update(payload)
+
+    Called when a :class:`Member` is updated.
+
+    Unlike :func:`on_member_update`
+    this is called regardless of the member being in the internal cache.
+    It is not called if the guild is not in the internal cache.
+
+    This requires :attr:`Intents.members` to be enabled.
+
+    :param payload: The raw event payload data.
+    :type payload: :class:`RawMemberUpdateEvent`
+
 .. function:: on_member_update(before, after)
 
     Called when a :class:`Member` updates their profile.
@@ -5777,6 +5790,14 @@ RawMemberRemoveEvent
 .. attributetable:: RawMemberRemoveEvent
 
 .. autoclass:: RawMemberRemoveEvent()
+    :members:
+
+RawMemberUpdateEvent
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. attributetable:: RawMemberUpdateEvent
+
+.. autoclass:: RawMemberUpdateEvent()
     :members:
 
 RawAppCommandPermissionsUpdateEvent

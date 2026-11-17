@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import copy
 import datetime
-import re
 from typing import (
     Any,
     AsyncIterator,
@@ -398,12 +397,6 @@ class Guild(Hashable):
         The maximum amount of users in a stage video channel.
 
         .. versionadded:: 2.3
-    require_chunked: Optional[:class:`bool`]
-        Indicates whether the server requires chunking. Newly joined guilds are always chunked and set to ``True``.
-
-        .. note::
-
-            This attribute is available only in a private fork.
     """
 
     __slots__ = (
@@ -446,7 +439,6 @@ class Guild(Hashable):
         '_discovery_splash',
         '_rules_channel_id',
         '_public_updates_channel_id',
-        '_require_chunked',
         '_stage_instances',
         '_scheduled_events',
         '_threads',
@@ -467,7 +459,7 @@ class Guild(Hashable):
         3: _GuildLimit(emoji=250, stickers=60, bitrate=384e3, filesize=104857600),
     }
 
-    def __init__(self, *, data: GuildPayload, state: ConnectionState, require_chunked: Optional[bool] = None) -> None:
+    def __init__(self, *, data: GuildPayload, state: ConnectionState) -> None:
         self._channels: Dict[int, GuildChannel] = {}
         self._members: Dict[int, Member] = {}
         self._voice_states: Dict[int, VoiceState] = {}
@@ -477,7 +469,6 @@ class Guild(Hashable):
         self._soundboard_sounds: Dict[int, SoundboardSound] = {}
         self._state: ConnectionState = state
         self._member_count: Optional[int] = None
-        self._require_chunked = require_chunked
         self._from_data(data)
 
     def _add_channel(self, channel: GuildChannel, /) -> None:
@@ -583,9 +574,7 @@ class Guild(Hashable):
         data.update(id=guild_id)
         return cls(state=state, data=data)  # type: ignore
 
-    def _from_data(self, guild: GuildPayload, require_chunked: Optional[bool] = None) -> None:
-        if self._require_chunked is None and require_chunked is not None:
-            self._require_chunked = require_chunked
+    def _from_data(self, guild: GuildPayload) -> None:
         try:
             self._member_count = guild['member_count']  # pyright: ignore[reportTypedDictNotRequiredAccess]
         except KeyError:
@@ -657,12 +646,9 @@ class Guild(Hashable):
         for obj in guild.get('voice_states', []):
             self._update_voice_state(obj, int(obj['channel_id']))
 
-        cache_joined = self._state.member_cache_flags.joined
-        cache_voice = self._state.member_cache_flags.voice
-        self_id = self._state.self_id
         for mdata in guild.get('members', []):
             member = Member(data=mdata, guild=self, state=self._state)  # type: ignore # Members will have the 'user' key in this scenario
-            if cache_joined or member.id == self_id or (cache_voice and member.id in self._voice_states):
+            if self._can_cache_member(member.id):
                 self._add_member(member)
 
         empty_tuple = ()
@@ -694,19 +680,42 @@ class Guild(Hashable):
                 self._add_soundboard_sound(soundboard_sound)
 
     @property
-    def require_chunked(self) -> Optional[bool]:
-        """Optional[:class:`bool`]: Indicates whether the server requires chunking.
+    def require_chunked(self) -> bool:
+        """:class:`bool`: Whether the members of this guild are chunked and cached.
 
-        Newly joined guilds are always chunked and set to ``True``.
+        Guilds without this flag only keep the bot itself and members in voice channels.
+        The flag lives on the connection state, so it survives reconnects and re-IDENTIFY.
+        Setting it to ``False`` drops the cached members, setting it to ``True`` does not
+        chunk by itself, call :meth:`chunk` afterwards.
+
+        .. note::
+
+            This attribute is available only in a private fork.
         """
-
-        return self._require_chunked
+        return self.id in self._state._chunk_required
 
     @require_chunked.setter
-    def require_chunked(self, value: Optional[bool]) -> None:
-        """Sets whether the server requires chunking."""
+    def require_chunked(self, value: bool) -> None:
+        required = self._state._chunk_required
+        if value:
+            required.add(self.id)
+            return
 
-        self._require_chunked = value
+        required.discard(self.id)
+        self_id = self._state.self_id
+        cache_voice = self._state.member_cache_flags.voice
+        voice_states = self._voice_states
+        self._members = {
+            member_id: member
+            for member_id, member in self._members.items()
+            if member_id == self_id or (cache_voice and member_id in voice_states)
+        }
+
+    def _can_cache_member(self, member_id: int, /) -> bool:
+        flags = self._state.member_cache_flags
+        if flags.joined and self.require_chunked:
+            return True
+        return member_id == self._state.self_id or (flags.voice and member_id in self._voice_states)
 
     @property
     def channels(self) -> Sequence[GuildChannel]:
@@ -2414,7 +2423,7 @@ class Guild(Hashable):
             await http.edit_incident_actions(self.id, payload=incident_actions_payload)
 
         data = await http.edit_guild(self.id, reason=reason, **fields)
-        return Guild(data=data, state=self._state, require_chunked=self._require_chunked)
+        return Guild(data=data, state=self._state)
 
     async def fetch_channels(self) -> Sequence[GuildChannel]:
         """|coro|

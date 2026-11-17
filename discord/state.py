@@ -45,6 +45,7 @@ from typing import (
     Deque,
     Literal,
     overload,
+    Set,
 )
 import weakref
 import inspect
@@ -138,6 +139,8 @@ class ChunkRequest:
                 return
 
             for member in members:
+                if not guild._can_cache_member(member.id):
+                    continue
                 existing = guild.get_member(member.id)
                 if existing is None or existing.joined_at is None:
                     guild._add_member(member)
@@ -197,6 +200,7 @@ class ConnectionState(Generic[ClientT]):
         self.handlers: Dict[str, Callable[..., Any]] = handlers
         self.hooks: Dict[str, Callable[..., Coroutine[Any, Any, Any]]] = hooks
         self.shard_count: Optional[int] = None
+        self._chunk_required: Set[int] = set()
         self._ready_task: Optional[asyncio.Task] = None
         self.application_id: Optional[int] = utils._get_as_snowflake(options, 'application_id')
         self.application_flags: ApplicationFlags = utils.MISSING
@@ -524,14 +528,19 @@ class ConnectionState(Generic[ClientT]):
     def _get_message(self, msg_id: Optional[int]) -> Optional[Message]:
         return utils.find(lambda m: m.id == msg_id, reversed(self._messages)) if self._messages else None
 
-    def _add_guild_from_data(self, data: GuildPayload, *, require_chunked: Optional[bool] = None) -> Guild:
-        guild = Guild(data=data, state=self, require_chunked=require_chunked)
+    def _add_guild_from_data(self, data: GuildPayload) -> Guild:
+        guild = Guild(data=data, state=self)
         self._add_guild(guild)
         return guild
 
     def _guild_needs_chunking(self, guild: Guild) -> bool:
         # If presences are enabled then we get back the old guild.large behaviour
-        return self._chunk_guilds and not guild.chunked and not (self._intents.presences and not guild.large)
+        return (
+            self._chunk_guilds
+            and guild.require_chunked
+            and not guild.chunked
+            and not (self._intents.presences and not guild.large)
+        )
 
     def _get_guild_channel(
         self, data: PartialMessagePayload, guild_id: Optional[int] = None
@@ -671,8 +680,7 @@ class ConnectionState(Generic[ClientT]):
                 self.application_flags: ApplicationFlags = ApplicationFlags._from_value(application['flags'])
 
         for guild_data in data['guilds']:
-            # require_chunked is None since all guilds here is in unavailable state
-            self._add_guild_from_data(guild_data, require_chunked=None)  # type: ignore
+            self._add_guild_from_data(guild_data)  # type: ignore
 
         self.dispatch('connect')
         self._ready_task = asyncio.create_task(self._delay_ready())
@@ -1108,7 +1116,7 @@ class ConnectionState(Generic[ClientT]):
             return
 
         member = Member(guild=guild, data=data, state=self)
-        if self.member_cache_flags.joined and guild.require_chunked:
+        if guild._can_cache_member(member.id):
             guild._add_member(member)
 
         if guild._member_count is not None:
@@ -1153,16 +1161,19 @@ class ConnectionState(Generic[ClientT]):
 
             self.dispatch('member_update', old_member, member)
         else:
+            member = Member(data=data, guild=guild, state=self)  # type: ignore # the data is not complete, contains a delta of values
             if self.member_cache_flags.joined:
-                member = Member(data=data, guild=guild, state=self)  # type: ignore # the data is not complete, contains a delta of values
-
                 # Force an update on the inner user if necessary
                 user_update = member._update_inner_user(user)
                 if user_update:
                     self.dispatch('user_update', user_update[0], user_update[1])
 
+            if guild._can_cache_member(user_id):
                 guild._add_member(member)
-            _log.debug('GUILD_MEMBER_UPDATE referencing an unknown member ID: %s. Discarding.', user_id)
+            else:
+                _log.debug('GUILD_MEMBER_UPDATE referencing an unknown member ID: %s. Discarding.', user_id)
+
+        self.dispatch('raw_member_update', RawMemberUpdateEvent(data, member))
 
     def parse_guild_emojis_update(self, data: gw.GuildEmojisUpdateEvent) -> None:
         guild = self._get_guild(int(data['guild_id']))
@@ -1249,19 +1260,17 @@ class ConnectionState(Generic[ClientT]):
         self.dispatch('automod_action', execution)
 
     def _get_create_guild(self, data: gw.GuildCreateEvent) -> Guild:
-        unavailable_state = data.get('unavailable')
-        if unavailable_state is False:
+        if data.get('unavailable') is False:
             # GUILD_CREATE with unavailable in the response
             # usually means that the guild has become available
             # and is therefore in the cache
             guild = self._get_guild(int(data['id']))
             if guild is not None:
                 guild.unavailable = False
-                guild.require_chunked = True
                 guild._from_data(data)
                 return guild
 
-        return self._add_guild_from_data(data, require_chunked=unavailable_state is False)
+        return self._add_guild_from_data(data)
 
     def is_guild_evicted(self, guild: Guild) -> bool:
         return guild.id not in self._guilds
@@ -1277,7 +1286,8 @@ class ConnectionState(Generic[ClientT]):
     async def chunk_guild(
         self, guild: Guild, *, wait: bool = True, cache: Optional[bool] = None
     ) -> Union[List[Member], asyncio.Future[List[Member]]]:
-        cache = cache or self.member_cache_flags.joined
+        if cache is None:
+            cache = self.member_cache_flags.joined
         request = self._chunk_requests.get(guild.id)
         if request is None:
             self._chunk_requests[guild.id] = request = ChunkRequest(
@@ -1973,7 +1983,7 @@ class AutoShardedConnectionState(ConnectionState[ClientT]):
                 self.application_flags: ApplicationFlags = ApplicationFlags._from_value(application['flags'])
 
         for guild_data in data['guilds']:
-            self._add_guild_from_data(guild_data, require_chunked=False)  # type: ignore # _add_guild_from_data requires a complete Guild payload
+            self._add_guild_from_data(guild_data)  # type: ignore # _add_guild_from_data requires a complete Guild payload
 
         if self._messages:
             self._update_message_references()

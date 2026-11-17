@@ -49,6 +49,7 @@ if TYPE_CHECKING:
         ThreadMembersUpdate,
         TypingStartEvent,
         GuildMemberRemoveEvent,
+        GuildMemberUpdateEvent,
         PollVoteActionEvent,
     )
     from .types.command import GuildApplicationCommandPermissions
@@ -77,6 +78,7 @@ __all__ = (
     'RawThreadMembersUpdate',
     'RawTypingEvent',
     'RawMemberRemoveEvent',
+    'RawMemberUpdateEvent',
     'RawAppCommandPermissionsUpdateEvent',
     'RawPollVoteActionEvent',
 )
@@ -493,6 +495,32 @@ class RawMemberRemoveEvent(_RawReprMixin):
     def __init__(self, data: GuildMemberRemoveEvent, user: User, /) -> None:
         self.user: Union[User, Member] = user
         self.guild_id: int = int(data['guild_id'])
+
+
+class RawMemberUpdateEvent(_RawReprMixin):
+    """Represents the payload for a :func:`on_raw_member_update` event.
+
+    .. note::
+
+        This event is available only in a private fork.
+
+    Attributes
+    ----------
+    guild_id: :class:`int`
+        The ID of the guild the member belongs to.
+    member: :class:`discord.Member`
+        The updated member. This is the cached member if it was cached,
+        otherwise a member built from the payload that may not be cached.
+    data: :class:`dict`
+        The raw data sent by the `gateway <https://discord.com/developers/docs/topics/gateway-events#guild-member-update>`_.
+    """
+
+    __slots__ = ('guild_id', 'member', 'data')
+
+    def __init__(self, data: GuildMemberUpdateEvent, member: Member, /) -> None:
+        self.guild_id: int = int(data['guild_id'])
+        self.member: Member = member
+        self.data: GuildMemberUpdateEvent = data
 
 
 class RawAppCommandPermissionsUpdateEvent(_RawReprMixin):

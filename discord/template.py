@@ -73,6 +73,10 @@ class _PartialTemplateState:
     def cache_guild_expressions(self):
         return False
 
+    @property
+    def _chunk_required(self):
+        return set()
+
     def store_emoji(self, guild, packet) -> None:
         return None
 
@@ -154,7 +158,7 @@ class Template:
         source_serialised['id'] = int(data['source_guild_id'])
         state = _PartialTemplateState(state=self._state)
         # Guild expects a ConnectionState, we're passing a _PartialTemplateState
-        self.source_guild = Guild(data=source_serialised, state=state, require_chunked=None)  # type: ignore
+        self.source_guild = Guild(data=source_serialised, state=state)  # type: ignore
 
         self.is_dirty: Optional[bool] = data.get('is_dirty', None)
 
