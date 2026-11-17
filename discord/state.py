@@ -131,6 +131,7 @@ class ChunkRequest:
         self.nonce: str = os.urandom(16).hex()
         self.buffer: List[Member] = []
         self.waiters: List[asyncio.Future[List[Member]]] = []
+        self.exception: Optional[BaseException] = None
 
     def add_members(self, members: List[Member]) -> None:
         self.buffer.extend(members)
@@ -147,6 +148,8 @@ class ChunkRequest:
                     guild._add_member(member)
 
     async def wait(self) -> List[Member]:
+        if self.exception is not None:
+            raise self.exception
         future = self.loop.create_future()
         self.waiters.append(future)
         try:
@@ -156,6 +159,9 @@ class ChunkRequest:
 
     def get_future(self) -> asyncio.Future[List[Member]]:
         future = self.loop.create_future()
+        if self.exception is not None:
+            future.set_exception(self.exception)
+            return future
         self.waiters.append(future)
         return future
 
@@ -165,6 +171,7 @@ class ChunkRequest:
                 future.set_result(self.buffer)
 
     def fail(self, exception: BaseException) -> None:
+        self.exception = exception
         for future in self.waiters:
             if not future.done():
                 future.set_exception(exception)
@@ -670,7 +677,9 @@ class ConnectionState(Generic[ClientT]):
                 pass  # already been deleted somehow
 
         except asyncio.CancelledError:
-            pass
+            for _, future in states:
+                if future.done() and not future.cancelled():
+                    future.exception()
         else:
             # dispatch the event
             self.call_handlers('ready')
@@ -1312,6 +1321,8 @@ class ConnectionState(Generic[ClientT]):
                 guild.id, guild.shard_id, self.loop, self._get_guild, cache=cache
             )
             await self.chunker(guild.id, nonce=request.nonce)
+        else:
+            request.cache = request.cache or cache
 
         if wait:
             return await request.wait()
@@ -1392,6 +1403,7 @@ class ConnectionState(Generic[ClientT]):
                 (msg for msg in self._messages if msg.guild != guild), maxlen=self.max_messages
             )
 
+        self._chunk_required.discard(guild.id)
         self._remove_guild(guild)
         self.dispatch('guild_remove', guild)
 
@@ -1721,8 +1733,7 @@ class ConnectionState(Generic[ClientT]):
             member, before, after = guild._update_voice_state(data, channel_id)  # type: ignore
             if member is not None:
                 if flags.voice:
-                    if channel_id is None and flags._voice_only and member.id != self_id:
-                        # Only remove from cache if we only have the voice flag enabled
+                    if channel_id is None and not guild._can_cache_member(member.id):
                         guild._remove_member(member)
                     elif channel_id is not None:
                         guild._add_member(member)
@@ -1982,7 +1993,9 @@ class AutoShardedConnectionState(ConnectionState[ClientT]):
                 pass  # already been deleted somehow
 
         except asyncio.CancelledError:
-            pass
+            for _, future in states:
+                if future.done() and not future.cancelled():
+                    future.exception()
         else:
             # dispatch the event
             self.dispatch('shard_ready', shard_id)
