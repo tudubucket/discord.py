@@ -1321,8 +1321,10 @@ class ConnectionState(Generic[ClientT]):
                 guild.id, guild.shard_id, self.loop, self._get_guild, cache=cache
             )
             await self.chunker(guild.id, nonce=request.nonce)
-        else:
-            request.cache = request.cache or cache
+        elif cache and not request.cache:
+            request.cache = True
+            buffered, request.buffer = request.buffer, []
+            request.add_members(buffered)
 
         if wait:
             return await request.wait()
@@ -1733,8 +1735,10 @@ class ConnectionState(Generic[ClientT]):
             member, before, after = guild._update_voice_state(data, channel_id)  # type: ignore
             if member is not None:
                 if flags.voice:
-                    if channel_id is None and not guild._can_cache_member(member.id):
-                        guild._remove_member(member)
+                    if channel_id is None:
+                        guild._voice_states.pop(member.id, None)
+                        if not guild._can_cache_member(member.id):
+                            guild._remove_member(member)
                     elif channel_id is not None:
                         guild._add_member(member)
 
