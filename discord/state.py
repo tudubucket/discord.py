@@ -52,6 +52,7 @@ import inspect
 
 import os
 
+from .errors import RateLimited
 from .guild import Guild
 from .activity import BaseActivity
 from .sku import Entitlement
@@ -162,6 +163,11 @@ class ChunkRequest:
         for future in self.waiters:
             if not future.done():
                 future.set_result(self.buffer)
+
+    def fail(self, exception: BaseException) -> None:
+        for future in self.waiters:
+            if not future.done():
+                future.set_exception(exception)
 
 
 _log = logging.getLogger(__name__)
@@ -326,6 +332,16 @@ class ConnectionState(Generic[ClientT]):
                 if complete:
                     request.done()
                     removed.append(key)
+
+        for key in removed:
+            del self._chunk_requests[key]
+
+    def fail_chunk_requests(self, guild_id: int, nonce: Optional[str], exception: BaseException) -> None:
+        removed = []
+        for key, request in self._chunk_requests.items():
+            if request.guild_id == guild_id and (nonce is None or request.nonce == nonce):
+                request.fail(exception)
+                removed.append(key)
 
         for key in removed:
             del self._chunk_requests[key]
@@ -608,6 +624,8 @@ class ConnectionState(Generic[ClientT]):
                 guild_id, query=query, limit=limit, user_ids=user_ids, presences=presences, nonce=request.nonce
             )
             return await asyncio.wait_for(request.wait(), timeout=30.0)
+        except RateLimited:
+            raise
         except asyncio.TimeoutError:
             _log.warning('Timed out waiting for chunks with query %r and limit %d for guild_id %d', query, limit, guild_id)
             raise
@@ -637,7 +655,7 @@ class ConnectionState(Generic[ClientT]):
 
                 try:
                     await asyncio.wait_for(future, timeout=timeout)
-                except asyncio.TimeoutError:
+                except (asyncio.TimeoutError, RateLimited):
                     _log.warning('Shard ID %s timed out waiting for chunks for guild_id %s.', guild.shard_id, guild.id)
 
                 if guild.unavailable is False:
@@ -1307,7 +1325,7 @@ class ConnectionState(Generic[ClientT]):
 
         try:
             await asyncio.wait_for(self.chunk_guild(guild), timeout=timeout)
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, RateLimited):
             _log.warning('Somehow timed out waiting for chunks for guild ID %s.', guild.id)
 
         if unavailable is False:
@@ -1435,6 +1453,20 @@ class ConnectionState(Generic[ClientT]):
                 self.dispatch('guild_role_update', old_role, role)
         else:
             _log.debug('GUILD_ROLE_UPDATE referencing an unknown guild ID: %s. Discarding.', data['guild_id'])
+
+    def parse_rate_limited(self, data: Dict[str, Any]) -> None:
+        self.dispatch('gateway_rate_limited', data)
+        if data.get('opcode') != 8:
+            return
+
+        meta = data.get('meta') or {}
+        guild_id = utils._get_as_snowflake(meta, 'guild_id')
+        if guild_id is None:
+            return
+
+        retry_after = float(data.get('retry_after') or 0)
+        _log.warning('Requesting members for guild ID %s is rate limited, retry in %.2fs.', guild_id, retry_after)
+        self.fail_chunk_requests(guild_id, meta.get('nonce'), RateLimited(retry_after))
 
     def parse_guild_members_chunk(self, data: gw.GuildMembersChunkEvent) -> None:
         guild_id = int(data['guild_id'])
@@ -1935,7 +1967,7 @@ class AutoShardedConnectionState(ConnectionState[ClientT]):
 
                 try:
                     await asyncio.wait_for(future, timeout=timeout)
-                except asyncio.TimeoutError:
+                except (asyncio.TimeoutError, RateLimited):
                     _log.warning('Shard ID %s timed out waiting for chunks for guild_id %s.', guild.shard_id, guild.id)
 
                 if guild.unavailable is False:
