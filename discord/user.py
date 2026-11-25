@@ -138,6 +138,23 @@ class BaseUser(_UserTag):
         self._primary_guild = data.get('primary_guild', None)
         self._collectibles = data.get('collectibles', None)
 
+    def _refresh(self, data: Union[UserPayload, PartialUserPayload]) -> None:
+        self.name = data['username']
+        if 'global_name' in data:
+            self.global_name = data['global_name']
+        if 'avatar' in data:
+            self._avatar = data['avatar']
+        if 'discriminator' in data:
+            self.discriminator = data['discriminator']
+        if 'public_flags' in data:
+            self._public_flags = data['public_flags']
+        if 'avatar_decoration_data' in data:
+            self._avatar_decoration_data = data['avatar_decoration_data']
+        if 'primary_guild' in data:
+            self._primary_guild = data['primary_guild']
+        if 'collectibles' in data:
+            self._collectibles = data['collectibles']
+
     @classmethod
     def _copy(cls, user: Self) -> Self:
         self = cls.__new__(cls)  # bypass __init__

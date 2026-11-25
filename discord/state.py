@@ -412,12 +412,15 @@ class ConnectionState(Generic[ClientT]):
         # this way is 300% faster than `dict.setdefault`.
         user_id = int(data['id'])
         try:
-            return self._users[user_id]
+            user = self._users[user_id]
         except KeyError:
             user = User(state=self, data=data)
             if cache:
                 self._users[user_id] = user
             return user
+        if 'username' in data:
+            user._refresh(data)
+        return user
 
     def store_user_no_intents(self, data: Union[UserPayload, PartialUserPayload], *, cache: bool = True) -> User:
         return User(state=self, data=data)
